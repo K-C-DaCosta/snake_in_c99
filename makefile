@@ -1,5 +1,5 @@
 COMPILER=gcc
-FLAGS=-Wall -O0 -g3 -I ./include --std=c99 
+FLAGS=-Wall -Os -g0 -I ./include --std=c99 
 LIBS=-lSDL2 -lm
 SRC_DIR=./src
 BIN_DIR=./bin

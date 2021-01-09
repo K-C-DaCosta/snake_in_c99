@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <SDL2/SDL.h>
 #include <math.h>
 
@@ -66,10 +67,12 @@ int rbGetFronti32(RingBuffer *rb)
     return buffer[rb->front];
 }
 
+// mod(k-1,n) <=>  k+10-1 % capacity
 int rbGetReari32(RingBuffer *rb)
 {
     int *buffer = (int *)rb->buffer;
-    int rear = mod(rb->rear - 1, rb->capacity);
+    // int rear = mod(rb->rear - 1, rb->capacity);
+    int rear = (rb->rear + rb->capacity - 1) % rb->capacity;
     return buffer[rear];
 }
 
@@ -77,6 +80,7 @@ void rbFree(RingBuffer *rb)
 {
     free(rb->buffer);
 }
+
 int mod(int a, int b)
 {
     int r = a % b;
@@ -168,27 +172,34 @@ int main()
         SDL_RENDERER_ACCELERATED);
 
     SDL_Event event;
-
     bool running = true;
+    int direction_table[255][2] = {{0, 0}};
     SnakeGrid grid = sgNew(20, 20, 30, 30);
     RingBuffer snake = rbCreatei32(20 * 20);
     int first_snake_block = gi(grid.cols / 2, grid.rows / 2, grid.cols);
+    int snake_dir[] = {1, 0};
+    int step_time = 100;
+    bool changed_dir = false;
+    int old_dir[2] = {0};
+    int new_dir[2] = {0};
+    uint32_t t0 = SDL_GetTicks();
+
     rbEnqueuei32(&snake, first_snake_block);
     grid.board_map[first_snake_block] = SNAKE;
     grid.board_map[50] = FOOD;
-    int snake_dir[] = {1, 0};
 
-    int direction_table[255][2] = {{0, 0}};
     set_dir('w', direction_table, &(int[2]){0, -1});
     set_dir('s', direction_table, &(int[2]){0, 1});
     set_dir('a', direction_table, &(int[2]){-1, 0});
     set_dir('d', direction_table, &(int[2]){1, 0});
-    int step_time = 100;
-    bool changed_dir = false;
-    int new_dir[2] = {0};
+
     while (running)
     {
-        while (SDL_PollEvent(&event) != 0)
+
+        for (int k = 0; k < 2; k++)
+            old_dir[k] = snake_dir[k];
+
+        while (SDL_PollEvent(&event) > 0)
         {
             if (event.quit.type == SDL_QUIT)
             {
@@ -197,37 +208,50 @@ int main()
             }
             if (event.type == SDL_KEYDOWN)
             {
+                // printf("key pressed\n");
 
-                changed_dir = true;
                 for (int k = 0; k < 2; k++)
                     new_dir[k] = direction_table[event.key.keysym.sym % 256][k];
+
+                int cross = new_dir[0] * old_dir[1] - new_dir[1] * old_dir[0];
+                if (cross != 0)
+                {
+                    snake_dir[0] = new_dir[0];
+                    snake_dir[1] = new_dir[1];
+                    changed_dir = true;
+                    if (move_snake(&snake, grid, snake_dir, &step_time) == false)
+                    {
+                        printf("You died, by making a wrong turn");
+                        return -1;
+                    }
+                }
             }
         }
-        if (changed_dir)
+
+        if (((SDL_GetTicks() - t0) > step_time))
         {
-            int cross = new_dir[0] * snake_dir[1] - new_dir[1] * snake_dir[0];
-            if (cross != 0)
+
+            if ((changed_dir == false) && move_snake(&snake, grid, snake_dir, &step_time) == false)
             {
-                snake_dir[0] = new_dir[0];
-                snake_dir[1] = new_dir[1];
+                printf("You died by crashing into obstable\n");
+                running = false;
             }
-            changed_dir = false;
+            
+            if (changed_dir)
+                changed_dir = false;
+
+            t0 = SDL_GetTicks();
         }
 
-        if (move_snake(&snake, grid, snake_dir, &step_time) == false)
-        {
-            printf("You died\n");
-            running = false;
-        }
-
-        printf("snake len = %d\n", snake.len);
+        // printf("snake len = %d\n", snake.len);
 
         //draw scene
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
         SDL_RenderClear(renderer);
         sgDrawGrid(grid, renderer);
         SDL_RenderPresent(renderer);
-        SDL_Delay(step_time);
+
+        SDL_Delay(1);
     }
 
     sgFree(grid);
